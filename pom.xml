@@ -11,7 +11,7 @@
     <modules>
         <module>realtime_common</module>
         <module>realtime_v1</module>
-        <module>stream-common</module>
+        <module>stream_common</module>
     </modules>
 
     <properties>
