@@ -10,9 +10,11 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * @author han.zhou
- * @date 2021-10-08 16:00
- **/
+ * @Package com.sdy.dwd.label2kafka
+ * @Author danyu-shi
+ * @Date 2025/5/12 9:52
+ * @description:
+ */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

@@ -5,6 +5,7 @@ import com.ververica.cdc.connectors.mysql.source.MySqlSource;
 import com.ververica.cdc.connectors.mysql.table.StartupOptions;
 import com.ververica.cdc.debezium.JsonDebeziumDeserializationSchema;
 import org.apache.flink.api.common.serialization.DeserializationSchema;
+import org.apache.flink.api.common.serialization.SimpleStringSchema;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.connector.kafka.source.KafkaSource;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
@@ -30,11 +31,11 @@ public class FlinkSourceUtil {
                 // 从最末尾位点开始消费
                 .setStartingOffsets(OffsetsInitializer.latest())
                 //注意：如果使用Flink提供的SimpleStringSchema对String类型的消息进行反序列化，如果消息为空，会报错
-                //.setValueOnlyDeserializer(new SimpleStringSchema())
+//                .setValueOnlyDeserializer(new SimpleStringSchema())
                 .setValueOnlyDeserializer(
                         new DeserializationSchema<String>() {
                             @Override
-                            public String deserialize(byte[] message) throws IOException {
+                            public String deserialize(byte[] message){
                                 if(message != null){
                                     return new String(message);
                                 }

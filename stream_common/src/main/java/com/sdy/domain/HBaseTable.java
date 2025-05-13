@@ -2,9 +2,8 @@ package com.sdy.domain;
 
 import java.io.Serializable;
 
-/**
- * @author han.zhou
- * @time: 2021/10/14 14:09
+/** * @Author danyu-shi
+ * @Date 2025/5/12 9:52
  * @className: HBaseTable
  * @description HBaseTable
  */

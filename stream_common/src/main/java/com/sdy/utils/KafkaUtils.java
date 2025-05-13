@@ -2,7 +2,9 @@ package com.sdy.utils;
 
 
 import com.alibaba.fastjson.JSONObject;
+import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.common.serialization.SimpleStringSchema;
+import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
 import org.apache.flink.connector.kafka.sink.KafkaSink;
 import org.apache.flink.connector.kafka.source.KafkaSource;
@@ -13,6 +15,7 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.StringDeserializer;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Properties;
 
@@ -91,6 +94,20 @@ public final class KafkaUtils {
                 .build();
     }
 
+    public static KafkaSource<String> buildKafkaSecureSource(String bootServerList,String kafkaTopic,String group,OffsetsInitializer offset){
+        return KafkaSource.<String>builder()
+                .setBootstrapServers(bootServerList)
+                .setTopics(kafkaTopic)
+                .setGroupId(group)
+                .setStartingOffsets(offset)
+                .setValueOnlyDeserializer(new SafeStringDeserializationSchema())
+                // 自动发现消费的partition变化
+                .setProperty("flink.partition-discovery.interval-millis",String.valueOf(10 * 1000))
+                .build();
+    }
+
+
+
     public static KafkaSink<String> buildKafkaSink(String bootServerList, String kafkaTopic) {
         Properties producerProperties = new Properties();
         producerProperties.setProperty(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootServerList);
@@ -113,6 +130,28 @@ public final class KafkaUtils {
                 )
                 .setKafkaProducerConfig(producerProperties)
                 .build();
+    }
+
+
+    public static class SafeStringDeserializationSchema implements DeserializationSchema<String> {
+
+        @Override
+        public String deserialize(byte[] message) throws IOException {
+            if (message == null) {
+                return null;
+            }
+            return new String(message);
+        }
+
+        @Override
+        public boolean isEndOfStream(String nextElement) {
+            return false;
+        }
+
+        @Override
+        public TypeInformation<String> getProducedType() {
+            return TypeInformation.of(String.class);
+        }
     }
 
 
