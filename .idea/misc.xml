@@ -11,6 +11,7 @@
       <set>
         <option value="$PROJECT_DIR$/gd_realtime01/pom.xml" />
         <option value="$PROJECT_DIR$/realtime/pom.xml" />
+        <option value="$PROJECT_DIR$/stream-common/pom.xml" />
       </set>
     </option>
   </component>
