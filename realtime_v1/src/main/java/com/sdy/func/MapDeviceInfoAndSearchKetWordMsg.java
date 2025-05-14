@@ -12,7 +12,7 @@ import org.apache.flink.api.common.functions.RichMapFunction;
 public class MapDeviceInfoAndSearchKetWordMsg extends RichMapFunction<JSONObject, JSONObject> {
 
     @Override
-    public JSONObject map(JSONObject jsonObject){
+    public JSONObject map(JSONObject jsonObject) throws Exception {
         JSONObject result = new JSONObject();
         if (jsonObject.containsKey("common")){
             JSONObject common = jsonObject.getJSONObject("common");

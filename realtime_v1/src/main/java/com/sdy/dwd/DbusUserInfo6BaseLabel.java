@@ -3,28 +3,29 @@ package com.sdy.dwd;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.sdy.domain.Constant;
-import com.sdy.func.AggregateUserDataProcessFunction;
-import com.sdy.func.MapDeviceInfoAndSearchKetWordMsg;
-import com.sdy.func.ProcessFilterRepeatTsData;
-import com.sdy.utils.KafkaUtil;
-import com.sdy.utils.KafkaUtils;
+import com.sdy.domin.DimBaseCategory;
+import com.sdy.domin.DimBaseCategory2;
+import com.sdy.func.*;
+import com.sdy.utils.*;
 import lombok.SneakyThrows;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
+import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.functions.RichMapFunction;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
 import org.apache.flink.streaming.api.datastream.KeyedStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.streaming.api.functions.sink.SinkFunction;
 import org.apache.flink.streaming.api.windowing.assigners.TumblingProcessingTimeWindows;
 import org.apache.flink.streaming.api.windowing.time.Time;
-import com.sdy.func.IntervalJoinUserInfoLabelProcessFunc;
+
+import java.sql.Connection;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.Period;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Date;
+import java.util.List;
 
 
 /**
@@ -35,12 +36,61 @@ import java.util.Date;
  */
 public class DbusUserInfo6BaseLabel {
 
+    private static final List<DimBaseCategory> dim_base_categories;
+
+    private static final List<DimBaseCategory2> dim_base_categories2;
+
+    private static final Connection connection;
+
+    private static final double device_rate_weight_coefficient = 0.1; // 设备权重系数
+    private static final double search_rate_weight_coefficient = 0.15; // 搜索权重系数
+
+    static {
+        try {
+            connection = JdbcUtils.getMySQLConnection(
+                    Constant.MYSQL_URL,
+                    Constant.MYSQL_USER_NAME,
+                    Constant.MYSQL_PASSWORD
+            );
+            String sql = "select b3.id,                          \n" +
+                    "            b3.name as b3name,              \n" +
+                    "            b2.name as b2name,              \n" +
+                    "            b1.name as b1name               \n" +
+                    "     from realtime_v1.base_category3 as b3  \n" +
+                    "     join realtime_v1.base_category2 as b2  \n" +
+                    "     on b3.category2_id = b2.id             \n" +
+                    "     join realtime_v1.base_category1 as b1  \n" +
+                    "     on b2.category1_id = b1.id";
+            dim_base_categories = JdbcUtils.queryList2(connection, sql, DimBaseCategory.class, false);
+
+            String sql2 = "select\n" +
+                    "    oi.id as order_id,\n" +
+                    "    oi.user_id as uid,\n" +
+                    "    kpd.base_category_name as  bcname,\n" +
+                    "    kpd.base_trademark_name as btname,\n" +
+                    "    od.order_price as price ,\n" +
+                    "    oi.create_time as create_time\n" +
+                    "\n" +
+                    "from sx_004.order_info oi\n" +
+                    "left join sx_004.order_detail od\n" +
+                    "on oi.id=od.order_id\n" +
+                    "left join sx_004.sku_info ki\n" +
+                    "on od.sku_id=ki.id\n" +
+                    "left join sx_003.hbase_kpb kpd\n" +
+                    "on ki.category3_id=kpd.base_category_id;";
+            dim_base_categories2 = JdbcUtils.queryList2(connection, sql, DimBaseCategory2.class, false);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+    }
     @SneakyThrows
     public static void main(String[] args) {
 
         System.setProperty("HADOOP_USER_NAME", "root");
 
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
 
 
         SingleOutputStreamOperator<String> kafkaCdcDbSource = env.fromSource(
@@ -125,14 +175,66 @@ public class DbusUserInfo6BaseLabel {
         SingleOutputStreamOperator<JSONObject> win2MinutesPageLogsDs = processStagePageLogDs.keyBy(data -> data.getString("uid"))
                 .process(new AggregateUserDataProcessFunction())
                 .keyBy(data -> data.getString("uid"))
-                .window(TumblingProcessingTimeWindows.of(Time.minutes(2)))
+                .window(TumblingProcessingTimeWindows.of(Time.minutes(1)))
                 .reduce((value1, value2) -> value2)
                 .uid("win 2 minutes page count msg")
                 .name("win 2 minutes page count msg");
-
+//        PageLog----->> {"uid":"115","os":"iOS,Android","ch":"Appstore,web,wandoujia,vivo","pv":12,"md":"iPhone 14,vivo IQOO Z6x ,vivo x90,SAMSUNG Galaxy s22","search_item":"","ba":"iPhone,vivo,SAMSUNG"}
 //        win2MinutesPageLogsDs.print("PageLog----->");
 
 
+        // 设备打分模型
+        // {"device_35_39":0.04,"os":"iOS,Android","device_50":0.02,"search_25_29":0,"ch":"Appstore,xiaomi","pv":13,"device_30_34":0.05,"device_18_24":0.07,"search_50":0,"search_40_49":0,"uid":"20","device_25_29":0.06,"md":"iPhone 14,vivo x90,xiaomi 12 ultra ","search_18_24":0,"judge_os":"iOS","search_35_39":0,"device_40_49":0.03,"search_item":"","ba":"iPhone,xiaomi,vivo","search_30_34":0}
+        SingleOutputStreamOperator<JSONObject> MinutesPageLogsDS = win2MinutesPageLogsDs.map(new MapDeviceAndSearchMarkModelFunc(dim_base_categories, device_rate_weight_coefficient, search_rate_weight_coefficient));
+//        MinutesPageLogsDS.print();
+
+        //价格区间
+
+        // 订单数据
+        SingleOutputStreamOperator<JSONObject> orderInfoDs = dataConvertJsonDs
+                .filter(json -> json.getJSONObject("source").getString("table").equals("order_info"));
+//        orderInfoDs.print();
+
+        SingleOutputStreamOperator<JSONObject> orderInfoUpdDs = orderInfoDs.map(new MapFunction<JSONObject, JSONObject>() {
+            @Override
+            public JSONObject map(JSONObject jsonObject) throws Exception {
+                String op = jsonObject.getString("op");
+                JSONObject json = new JSONObject();
+                if (!op.equals("d")) {
+                    JSONObject after = jsonObject.getJSONObject("after");
+                    json.put("op", op);
+                    json.put("order_id", after.getString("id"));
+                    json.put("create_time", after.getString("create_time"));
+                    json.put("total_amount", after.getString("total_amount"));
+                    json.put("uid", after.getString("user_id"));
+                    json.put("ts_ms", jsonObject.getString("ts_ms"));
+                    return json;
+
+                }
+                return null;
+            }
+        });
+//        {"op":"r","uid":"384","create_time":"1745450798000","total_amount":"9549.0","order_id":"3702","ts_ms":"1747019726072"}
+//        orderInfoUpdDs.print();
+
+
+        KeyedStream<JSONObject, String> orderInfoKeyByDs = orderInfoUpdDs.keyBy(json -> json.getString("order_id"));
+
+        SingleOutputStreamOperator<JSONObject> orderInfoKeyDs = orderInfoKeyByDs.keyBy(data -> data.getLong("order_id"))
+                .filter(new FilterBloomOrderInfolicatorFunc(1000000, 0.01));
+//        info---->> {"op":"r","uid":"1029","create_time":"1745407954000","total_amount":"5999.0","order_id":"3574","ts_ms":"1747019726044"}
+//        orderInfoKeyDs.print("info---->");
+
+        // 1 min 分钟窗口 实现了窗口内数据的去重，只保留最新状态
+        SingleOutputStreamOperator<JSONObject> orderInfoKeyMinDs = orderInfoKeyDs.keyBy(json -> json.getString("order_id"))
+                .process(new AggregateOrderInfoFunction())
+                .keyBy(json -> json.getString("order_id"))
+                .window(TumblingProcessingTimeWindows.of(Time.minutes(1)))
+                .reduce((value1, value2) -> value2);
+        orderInfoKeyMinDs.print("key---->");
+
+        SingleOutputStreamOperator<JSONObject> orderInfoDS = orderInfoKeyMinDs.map(new MapInfoAndSearchMarkModelFunc(dim_base_categories2, device_rate_weight_coefficient, search_rate_weight_coefficient));
+//        orderInfoDS.print("orderInfoDS--->");
 
 
         SingleOutputStreamOperator<JSONObject> userInfoDs = dataConvertJsonDs.
@@ -234,7 +336,6 @@ public class DbusUserInfo6BaseLabel {
 //        spu--->:11> {"uid":"1045","unit_height":"cm","create_ts":1747043816000,"weight":"63","unit_weight":"kg","ts_ms":1747016080662,"height":"158"}
 //        finalUserinfoSupDs.print("spu--->");
 
-
         KeyedStream<JSONObject, String> keyedStreamUserInfoDs = finalUserinfoDs.keyBy(data -> data.getString("uid"));
         KeyedStream<JSONObject, String> keyedStreamUserInfoSupDs = finalUserinfoSupDs.keyBy(data -> data.getString("uid"));
 //        kUserInfo--->:16> {"birthday":"1982-09-23","uid":"1029","decade":1980,"login_name":"h4vkj83","uname":"元伟刚","gender":"home","zodiac_sign":"天秤座","user_level":"1","phone_num":"13752945975","email":"h4vkj83@3721.net","ts_ms":1747035718684,"age":42}
@@ -251,6 +352,7 @@ public class DbusUserInfo6BaseLabel {
                 .process(new IntervalJoinUserInfoLabelProcessFunc());
 
 //        processIntervalJoinUserInfo6BaseMessageDs.print();
+
 
 
         env.execute("DbusUserInfo6BaseLabel");
@@ -279,4 +381,13 @@ public class DbusUserInfo6BaseLabel {
         else if (month == 10 || month == 11 && day <= 22) return "天蝎座";
         else return "射手座";
     }
+
+    private static String getmonary(Integer monary){
+        int  m = monary.intValue();
+        if (m<1000) return "低价";
+        else if (m>=1000 && m<5000) return "中价";
+        else return "高价";
+
+    }
+
 }

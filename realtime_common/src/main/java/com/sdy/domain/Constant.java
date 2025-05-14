@@ -10,7 +10,7 @@ public class Constant {
     public static final String KAFKA_BROKERS = "cdh01:9092,cdh02:9092,cdh03:9092";
 
     public static final String TOPIC_DB = "realtime-gd-danyu";
-    public static final String TOPIC_LOG = "stream-dev1-danyushi";
+    public static final String TOPIC_LOG = "realtime_v2_page_log";
     public static final String TOPICGl = "realtime_v2_db";
 
     public static final String TOPICinfo2 = "stream-DbusDBComment-danyushi";
