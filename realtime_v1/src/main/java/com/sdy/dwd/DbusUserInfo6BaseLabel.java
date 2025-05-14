@@ -3,7 +3,9 @@ package com.sdy.dwd;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.sdy.domain.Constant;
+import com.sdy.func.AggregateUserDataProcessFunction;
 import com.sdy.func.MapDeviceInfoAndSearchKetWordMsg;
+import com.sdy.func.ProcessFilterRepeatTsData;
 import com.sdy.utils.KafkaUtil;
 import com.sdy.utils.KafkaUtils;
 import lombok.SneakyThrows;
@@ -14,6 +16,7 @@ import org.apache.flink.streaming.api.datastream.KeyedStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.sink.SinkFunction;
+import org.apache.flink.streaming.api.windowing.assigners.TumblingProcessingTimeWindows;
 import org.apache.flink.streaming.api.windowing.time.Time;
 import com.sdy.func.IntervalJoinUserInfoLabelProcessFunc;
 import java.time.Duration;
@@ -68,9 +71,69 @@ public class DbusUserInfo6BaseLabel {
 //        kafka--->:12> {"before":null,"after":{"id":7,"tm_name":"金沙河","logo_url":"/static/default.jpg","create_time":1639440000000,"operate_time":null},"source":{"version":"1.6.4.Final","connector":"mysql","name":"mysql_binlog_source","ts_ms":0,"snapshot":"false","db":"gmall_v1_danyu_shi","sequence":null,"table":"base_trademark","server_id":0,"gtid":null,"file":"","pos":0,"row":0,"thread":null,"query":null},"op":"r","ts_ms":1747051824730,"transaction":null}
 //        kafkaCdcDbSource.print("kafka--->");
 
+
+        SingleOutputStreamOperator<String> kafkaPageLogSource = env.fromSource(
+                KafkaUtils.buildKafkaSecureSource(
+                        Constant.KAFKA_BROKERS,
+                        Constant.TOPIC_LOG,
+                        new Date().toString(),
+                        OffsetsInitializer.earliest()
+                ),
+                WatermarkStrategy.<String>forBoundedOutOfOrderness(Duration.ofSeconds(3))
+                        .withTimestampAssigner((event, timestamp) -> {
+                                    JSONObject jsonObject = JSONObject.parseObject(event);
+                                    if (event != null && jsonObject.containsKey("ts_ms")){
+                                        try {
+                                            return JSONObject.parseObject(event).getLong("ts_ms");
+                                        }catch (Exception e){
+                                            e.printStackTrace();
+                                            System.err.println("Failed to parse event as JSON or get ts_ms: " + event);
+                                            return 0L;
+                                        }
+                                    }
+                                    return 0L;
+                                }
+                        ),
+                        "kafka_page_log_source"
+                ).uid("kafka_page_log_source")
+                .name("kafka_page_log_source");
+//        pageLog--->:7> {"common":{"ar":"29","ba":"iPhone","ch":"Appstore","is_new":"1","md":"iPhone 14","mid":"mid_31","os":"iOS 13.3.1","sid":"97e2d4e1-1dd1-48d3-adb1-2908ef91d3ce","uid":"819","vc":"v2.1.134"},"page":{"during_time":15000,"item":"819","item_type":"user_id","last_page_id":"good_detail","page_id":"register"},"ts":1745162898593}
+//        kafkaPageLogSource.print("pageLog--->");
+
         SingleOutputStreamOperator<JSONObject> dataConvertJsonDs = kafkaCdcDbSource.map(JSON::parseObject)
-                .uid("convert json")
-                .name("convert json");
+                .uid("convert json cdc db")
+                .name("convert json cdc db");
+
+        SingleOutputStreamOperator<JSONObject> dataPageLogConvertJsonDs = kafkaPageLogSource.map(JSON::parseObject)
+                .uid("convert json page log")
+                .name("convert json page log");
+
+        // 设备信息 + 关键词搜索
+        SingleOutputStreamOperator<JSONObject> logDeviceInfoDs = dataPageLogConvertJsonDs.map(new MapDeviceInfoAndSearchKetWordMsg())
+                .uid("get device info & search")
+                .name("get device info & search");
+//        log---->:7> {"uid":"777","deviceInfo":{"ar":"22","uid":"777","os":"Android","ch":"web","md":"xiaomi 12 ultra ","vc":"v2.1.134","ba":"xiaomi"},"ts":1745162151520}
+//        logDeviceInfoDs.print("log---->");
+
+        SingleOutputStreamOperator<JSONObject> filterNotNullUidLogPageMsg = logDeviceInfoDs.filter(data -> !data.getString("uid").isEmpty());
+        KeyedStream<JSONObject, String> keyedStreamLogPageMsg = filterNotNullUidLogPageMsg.keyBy(data -> data.getString("uid"));
+
+
+        SingleOutputStreamOperator<JSONObject> processStagePageLogDs = keyedStreamLogPageMsg.process(new ProcessFilterRepeatTsData());
+
+        // 2 min 分钟窗口
+        SingleOutputStreamOperator<JSONObject> win2MinutesPageLogsDs = processStagePageLogDs.keyBy(data -> data.getString("uid"))
+                .process(new AggregateUserDataProcessFunction())
+                .keyBy(data -> data.getString("uid"))
+                .window(TumblingProcessingTimeWindows.of(Time.minutes(2)))
+                .reduce((value1, value2) -> value2)
+                .uid("win 2 minutes page count msg")
+                .name("win 2 minutes page count msg");
+
+//        win2MinutesPageLogsDs.print("PageLog----->");
+
+
+
 
         SingleOutputStreamOperator<JSONObject> userInfoDs = dataConvertJsonDs.
                 filter(data -> data.getJSONObject("source").getString("table").equals("user_info"))
@@ -180,35 +243,14 @@ public class DbusUserInfo6BaseLabel {
 //        keyedStreamUserInfoSupDs.print("kspu---->");
 
 //年龄、性别、年代、身高、体重、星座 6 类标签
+// 17> {"birthday":"1972-01-23","decade":1970,"uname":"熊致树","gender":"home","zodiac_sign":"水瓶座","weight":"85","uid":"1028","login_name":"mnal6je","unit_height":"cm","user_level":"3","phone_num":"13515989633","unit_weight":"kg","email":"mnal6je@yahoo.com","ts_ms":1747035718684,"age":53,"height":"188"}
+
         SingleOutputStreamOperator<JSONObject> processIntervalJoinUserInfo6BaseMessageDs =
                 keyedStreamUserInfoDs.intervalJoin(keyedStreamUserInfoSupDs)
                 .between(Time.days(-1), Time.days(1))
                 .process(new IntervalJoinUserInfoLabelProcessFunc());
 
 //        processIntervalJoinUserInfo6BaseMessageDs.print();
-
-
-
-
-        SingleOutputStreamOperator<JSONObject> dataConverJsonDs = kafkaCdcDbSource.map(JSON::parseObject)
-                .uid("convert json cdc db").name("convert json cdc db");
-//        dataConverJsonDs--->:10> {"op":"r","after":{"create_time":1639440000000,"name":"清洁剂","id":949,"category2_id":100},"source":{"server_id":0,"version":"1.6.4.Final","file":"","connector":"mysql","pos":0,"name":"mysql_binlog_source","row":0,"ts_ms":0,"snapshot":"false","db":"gmall_v1_danyu_shi","table":"base_category3"},"ts_ms":1747036099889}
-//        dataConverJsonDs.print("dataConverJsonDs--->");
-
-        SingleOutputStreamOperator<JSONObject> dataPageLogConverJsonDs = kafkaCdcDbSource.map(JSON::parseObject)
-                .uid("convert json cdc log").name("convert json cdc log");
-//        dataPageLogConverJsonDs--->:
-//        12> {"op":"r","after":{"tm_name":"长粒香","create_time":1639440000000,"logo_url":"/static/default.jpg","id":6},"source":{"server_id":0,"version":"1.6.4.Final","file":"","connector":"mysql","pos":0,"name":"mysql_binlog_source","row":0,"ts_ms":0,"snapshot":"false","db":"gmall_v1_danyu_shi","table":"base_trademark"},"ts_ms":1747051824730}
-//        dataPageLogConverJsonDs.print("dataPageLogConverJsonDs--->");
-
-
-        //设备信息 + 关键词搜索
-//        dataPageLogConverJsonDs.map(new MapDeviceInfoAndSearchKetWordMsg()).print();
-
-
-
-
-
 
 
         env.execute("DbusUserInfo6BaseLabel");
