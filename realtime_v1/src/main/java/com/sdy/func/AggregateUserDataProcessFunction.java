@@ -61,6 +61,7 @@ public class AggregateUserDataProcessFunction extends KeyedProcessFunction<Strin
         String ch = deviceInfo.getString("ch");
         String md = deviceInfo.getString("md");
         String ba = deviceInfo.getString("ba");
+
         String searchItem = value.containsKey("search_item") ? value.getString("search_item") : null;
 
         // 更新字段集合
@@ -68,6 +69,7 @@ public class AggregateUserDataProcessFunction extends KeyedProcessFunction<Strin
         updateField("ch", ch);
         updateField("md", md);
         updateField("ba", ba);
+
         if (searchItem != null) {
             updateField("search_item", searchItem);
         }
@@ -80,8 +82,10 @@ public class AggregateUserDataProcessFunction extends KeyedProcessFunction<Strin
         output.put("ch", String.join(",", getField("ch")));
         output.put("md", String.join(",", getField("md")));
         output.put("ba", String.join(",", getField("ba")));
+
         output.put("search_item", String.join(",", getField("search_item")));
 
+        output.put("ts", value.getString("ts"));
         out.collect(output);
     }
 

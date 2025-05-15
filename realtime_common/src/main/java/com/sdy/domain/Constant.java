@@ -13,6 +13,14 @@ public class Constant {
     public static final String TOPIC_LOG = "realtime_v2_page_log";
     public static final String TOPICGl = "realtime_v2_db";
 
+    public static final String kafka_label_base2_topic = "realtime_v2_result_label_user_base2";
+
+    public static final String kafka_label_base4_topic = "realtime_v2_result_label_user_base4";
+
+    public static final String kafka_label_base6_topic = "realtime_v2_result_label_user_base6";
+
+
+
     public static final String TOPICinfo2 = "stream-DbusDBComment-danyushi";
     public static final String MYSQL_HOST = "10.160.60.17";
     public static final int MYSQL_PORT = 3306;

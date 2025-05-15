@@ -1,4 +1,4 @@
-package com.sdy.dwd;
+package com.sdy.dim;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
@@ -8,13 +8,18 @@ import com.sdy.domin.DimBaseCategory2;
 import com.sdy.func.*;
 import com.sdy.utils.*;
 import lombok.SneakyThrows;
+import org.apache.flink.api.common.eventtime.SerializableTimestampAssigner;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.functions.RichMapFunction;
+import org.apache.flink.api.common.state.ValueState;
+import org.apache.flink.api.common.state.ValueStateDescriptor;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
 import org.apache.flink.streaming.api.datastream.KeyedStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.streaming.api.functions.co.ProcessJoinFunction;
 import org.apache.flink.streaming.api.windowing.assigners.TumblingProcessingTimeWindows;
 import org.apache.flink.streaming.api.windowing.time.Time;
@@ -47,6 +52,7 @@ public class DbusUserInfo6BaseLabel {
     private static final double device_rate_weight_coefficient = 0.1; // 设备权重系数
     private static final double search_rate_weight_coefficient = 0.15; // 搜索权重系数
 
+    //从三张分类表（base_category3、base_category2、base_category1）中联合查询分类名称
     static {
         try {
             connection = JdbcUtils.getMySQLConnection(
@@ -73,14 +79,14 @@ public class DbusUserInfo6BaseLabel {
                     "    od.order_price as price ,\n" +
                     "    oi.create_time as create_time\n" +
                     "\n" +
-                    "from sx_004.order_info oi\n" +
-                    "left join sx_004.order_detail od\n" +
+                    "from gmall_v1_danyu_shi.order_info oi\n" +
+                    "left join gmall_v1_danyu_shi.order_detail od\n" +
                     "on oi.id=od.order_id\n" +
-                    "left join sx_004.sku_info ki\n" +
+                    "left join gmall_v1_danyu_shi.sku_info ki\n" +
                     "on od.sku_id=ki.id\n" +
                     "left join gmall_v1_danyu_shi.hbase_kpb kpd\n" +
                     "on ki.category3_id=kpd.base_category_id;";
-            dim_base_categories2 = JdbcUtils.queryList2(connection, sql, DimBaseCategory2.class, false);
+            dim_base_categories2 = JdbcUtils.queryList2(connection, sql2, DimBaseCategory2.class, false);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -170,6 +176,7 @@ public class DbusUserInfo6BaseLabel {
         SingleOutputStreamOperator<JSONObject> filterNotNullUidLogPageMsg = logDeviceInfoDs.filter(data -> !data.getString("uid").isEmpty());
         KeyedStream<JSONObject, String> keyedStreamLogPageMsg = filterNotNullUidLogPageMsg.keyBy(data -> data.getString("uid"));
 
+//        keyedStreamLogPageMsg.print();
 
         SingleOutputStreamOperator<JSONObject> processStagePageLogDs = keyedStreamLogPageMsg.process(new ProcessFilterRepeatTsData());
 
@@ -183,8 +190,6 @@ public class DbusUserInfo6BaseLabel {
                 .name("win 2 minutes page count msg");
 //        PageLog----->> {"uid":"115","os":"iOS,Android","ch":"Appstore,web,wandoujia,vivo","pv":12,"md":"iPhone 14,vivo IQOO Z6x ,vivo x90,SAMSUNG Galaxy s22","search_item":"","ba":"iPhone,vivo,SAMSUNG"}
 //        win2MinutesPageLogsDs.print("PageLog----->");
-
-
         // 设备打分模型
         // {"device_35_39":0.04,"os":"iOS,Android","device_50":0.02,"search_25_29":0,"ch":"Appstore,xiaomi","pv":13,"device_30_34":0.05,"device_18_24":0.07,"search_50":0,"search_40_49":0,"uid":"20","device_25_29":0.06,"md":"iPhone 14,vivo x90,xiaomi 12 ultra ","search_18_24":0,"judge_os":"iOS","search_35_39":0,"device_40_49":0.03,"search_item":"","ba":"iPhone,xiaomi,vivo","search_30_34":0}
         SingleOutputStreamOperator<JSONObject> MinutesPageLogsDS = win2MinutesPageLogsDs.map(new MapDeviceAndSearchMarkModelFunc(dim_base_categories, device_rate_weight_coefficient, search_rate_weight_coefficient));
@@ -254,44 +259,10 @@ public class DbusUserInfo6BaseLabel {
         SingleOutputStreamOperator<JSONObject> orderDetail1 = orderDetail2.keyBy(data -> data.getLong("order_id"))
                 .filter(new FilterBloomOrderInfolicatorFunc(1000000, 0.01));
 //        orderDetail1.print();
-
+//        根据订单详情计算用户在不同价格区间的消费打分；利用 dim_base_categories2 进行商品类目匹配；结合设备和搜索行为的权重系数，生成用户的标签化订单特征信息
         SingleOutputStreamOperator<JSONObject> orderInfos = orderDetail1.map(new MaoOrderInfo(dim_base_categories2, device_rate_weight_coefficient, search_rate_weight_coefficient));
-        orderInfos.print();
+//        orderInfos.print();
 
-
-//        SingleOutputStreamOperator<JSONObject> cdcOrderInfoDs = dataConvertJsonDs.filter(data -> data.getJSONObject("source").getString("table").equals("order_info"))
-//                .uid("filter kafka order info")
-//                .name("filter kafka order info");
-////        cdcOrderInfoDs.print();
-//
-//
-//        SingleOutputStreamOperator<JSONObject> cdcOrderDetailDs = dataConvertJsonDs.filter(data -> data.getJSONObject("source").getString("table").equals("order_detail"))
-//                .uid("filter kafka order detail")
-//                .name("filter kafka order detail");
-////        cdcOrderDetailDs.print();
-//
-//        SingleOutputStreamOperator<JSONObject> mapCdcOrderInfoDs = cdcOrderInfoDs.map(new MapOrderInfoDataFunc());
-//        SingleOutputStreamOperator<JSONObject> mapCdcOrderDetailDs = cdcOrderDetailDs.map(new MapOrderDetailFunc());
-//
-////        mapCdcOrderInfoDs.print();
-////        mapCdcOrderDetailDs.print();
-//
-//        SingleOutputStreamOperator<JSONObject> filterNotNullCdcOrderInfoDs = mapCdcOrderInfoDs.filter(data -> data.getString("id") != null && !data.getString("id").isEmpty());
-//        SingleOutputStreamOperator<JSONObject> filterNotNullCdcOrderDetailDs = mapCdcOrderDetailDs.filter(data -> data.getString("order_id") != null && !data.getString("order_id").isEmpty());
-////        filterNotNullCdcOrderInfoDs.print();
-////        filterNotNullCdcOrderDetailDs.print();
-//        KeyedStream<JSONObject, String> keyedStreamCdcOrderInfoDs = filterNotNullCdcOrderInfoDs.keyBy(data -> data.getString("id"));
-//        KeyedStream<JSONObject, String> keyedStreamCdcOrderDetailDs = filterNotNullCdcOrderDetailDs.keyBy(data -> data.getString("order_id"));
-////        keyedStreamCdcOrderInfoDs.print("info=--->");
-////        keyedStreamCdcOrderDetailDs.print("detail---->");
-//        SingleOutputStreamOperator<JSONObject> processIntervalJoinOrderInfoAndDetailDs = keyedStreamCdcOrderInfoDs.intervalJoin(keyedStreamCdcOrderDetailDs)
-//                .between(Time.days(-2), Time.days(2))
-//                .process(new IntervalDbOrderInfoJoinOrderDetailProcessFunc());
-////        processIntervalJoinOrderInfoAndDetailDs.print();
-////        {"payment_way":"3501","consignee":"华民","create_time":1745448003000,"sku_num":1,"split_coupon_amount":"1","order_price":"10599.0","sku_id":16,"detail_id":"5279","original_total_amount":"10599.0","uid":"390","total_amount":"10349.0","province_id":5,"trade_body":"联想（Lenovo） 拯救者Y9000P 2022 16英寸游戏笔记本电脑 i7-12700H RTX3060 冰魄白等1件商品","sku_name":"联想（Lenovo） 拯救者Y9000P 2022 16英寸游戏笔记本电脑 i7-12700H RTX3060 冰魄白","id":"3691","order_id":"3691","ts_ms":1747019726071,"split_activity_amount":250.0,"split_total_amount":10349.0}
-//        SingleOutputStreamOperator<JSONObject> Order_infoAndDetailDs = processIntervalJoinOrderInfoAndDetailDs.keyBy(data -> data.getString("detail_id"))
-//                .process(new processOrderInfoAndDetailFunc());
-//        Order_infoAndDetailDs.print();
 
         SingleOutputStreamOperator<JSONObject> userInfoDs = dataConvertJsonDs.
                 filter(data -> data.getJSONObject("source").getString("table").equals("user_info"))
@@ -408,6 +379,101 @@ public class DbusUserInfo6BaseLabel {
                 .process(new IntervalJoinUserInfoLabelProcessFunc());
 
 //        processIntervalJoinUserInfo6BaseMessageDs.print();
+//--------------------------------------------------------------------->
+//
+//        通过用户的 uid，将 processIntervalJoinUserInfo6BaseMessageDs 和 orderInfos 两个数据流进行时间区间内的关联（Interval Join），关联的时间范围是前后各30小时。
+//        在关联过程中，将 orderInfos 流中的订单相关的标签（如 sum_25~29、sum_40~49 等）添加到用户信息对象中，然后输出增强后的用户信息。
+
+        SingleOutputStreamOperator<JSONObject> user = processIntervalJoinUserInfo6BaseMessageDs
+                .keyBy(o->o.getString("uid"))
+                .intervalJoin(orderInfos.keyBy(o->o.getString("uid")))
+                .between(Time.hours(-30), Time.hours(30))
+                .process(new ProcessJoinFunction<JSONObject, JSONObject, JSONObject>() {
+                    @Override
+                    public void processElement(JSONObject jsonObject1, JSONObject jsonObject2, ProcessJoinFunction<JSONObject, JSONObject, JSONObject>.Context context, Collector<JSONObject> collector) throws Exception {
+                        jsonObject1.put("sum_25~29",jsonObject2.getString("sum_25~29"));
+                        jsonObject1.put("sum_40~49",jsonObject2.getString("sum_40~49"));
+                        jsonObject1.put("sum_50",jsonObject2.getString("sum_50"));
+                        jsonObject1.put("sum_18~24",jsonObject2.getString("sum_18~24"));
+                        jsonObject1.put("sum_35~39",jsonObject2.getString("sum_35~39"));
+                        jsonObject1.put("sum_30~34",jsonObject2.getString("sum_30~34"));
+
+                        collector.collect(jsonObject1);
+                    }
+                });
+
+//        user.print();
+
+
+
+//        设置时间戳：从MinutesPageLogsDS流中提取每条数据的uid和ts字段，将ts赋值给ts_ms作为事件时间戳；
+//        分配水位线：使用forMonotonousTimestamps策略生成水位线，基于ts_ms字段进行时间窗口操作，用于后续基于事件时间的窗口处理。
+        SingleOutputStreamOperator<JSONObject> logs1 = MinutesPageLogsDS.map(new MapFunction<JSONObject, JSONObject>() {
+            @Override
+            public JSONObject map(JSONObject jsonObject) throws Exception {
+                String uid = jsonObject.getString("uid");
+//                jsonObject.put("uid", uid.substring(0, 1));
+                jsonObject.put("ts_ms", jsonObject.getString("ts"));
+                return jsonObject;
+            }
+        }).assignTimestampsAndWatermarks(WatermarkStrategy.<JSONObject>forMonotonousTimestamps().withTimestampAssigner(new SerializableTimestampAssigner<JSONObject>() {
+            @Override
+            public long extractTimestamp(JSONObject jsonObject, long l) {
+                return jsonObject.getLongValue("ts_ms");
+            }
+        }));
+
+//        logs1.print();
+//        通过 uid 将两个数据流 user 和 logs1 在 [-12小时, 12小时] 的时间窗口内进行 Interval Join，
+//        然后在 processElement 方法中将日志数据（jsonObject2）中的搜索和设备标签加到用户数据（jsonObject1）的对应字段中，最终输出增强后的用户信息。
+
+        SingleOutputStreamOperator<JSONObject> user2 = user
+                .keyBy(o->o.getString("uid"))
+                .intervalJoin(logs1.keyBy(o->o.getString("uid")))
+                .between(Time.hours(-12), Time.hours(12))
+                .process(new ProcessJoinFunction<JSONObject, JSONObject, JSONObject>() {
+                    @Override
+                    public void processElement(JSONObject jsonObject1, JSONObject jsonObject2, ProcessJoinFunction<JSONObject, JSONObject, JSONObject>.Context context, Collector<JSONObject> collector) throws Exception {
+                        jsonObject1.put("sum_25~29",jsonObject1.getDoubleValue("sum_25~29")+ jsonObject2.getDoubleValue("search_18_24") + jsonObject2.getDoubleValue("device_18_24"));
+                        jsonObject1.put("sum_40~49",jsonObject1.getDoubleValue("sum_40~49")+ jsonObject2.getDoubleValue("search_40_49") + jsonObject2.getDoubleValue("device_40_49"));
+                        jsonObject1.put("sum_50",jsonObject1.getDoubleValue("sum_50") + jsonObject2.getDoubleValue("search_50") + jsonObject2.getDoubleValue("device_50"));
+                        jsonObject1.put("sum_18~24",jsonObject1.getDoubleValue("sum_18~24") + jsonObject2.getDoubleValue("device_18_24") + + jsonObject2.getDoubleValue("search_18_24"));
+                        jsonObject1.put("sum_35~39",jsonObject1.getDoubleValue("sum_35~39") + jsonObject2.getDoubleValue("search_35_39") + jsonObject2.getDoubleValue("device_35_39"));
+                        jsonObject1.put("sum_30~34",jsonObject1.getDoubleValue("sum_30~34") + jsonObject2.getDoubleValue("search_30_34") + jsonObject2.getDoubleValue("device_30_34"));
+                        collector.collect(jsonObject1);
+                    }
+                });
+//        user2.print("zzzzz->>>");
+
+
+//        该段代码实现了基于用户ID（uid）的数据去重处理，保留每个用户最新的记录
+        SingleOutputStreamOperator<JSONObject> dedupedUser2 = user2
+                .keyBy(o -> o.getString("uid"))
+                .process(new KeyedProcessFunction<String, JSONObject, JSONObject>() {
+                    private transient ValueState<Long> lastProcessedTs;
+
+                    @Override
+                    public void open(Configuration parameters) throws Exception {
+                        lastProcessedTs = getRuntimeContext().getState(
+                                new ValueStateDescriptor<>("lastProcessedTs", Long.class));
+                    }
+
+                    @Override
+                    public void processElement(JSONObject value, Context ctx, Collector<JSONObject> out) throws Exception {
+                        long currentTs = value.getLongValue("final_process_ts");
+                        Long lastTs = lastProcessedTs.value();
+
+                        // 只输出时间戳更新的数据（或首次出现的数据）
+                        if (lastTs == null || currentTs > lastTs) {
+                            lastProcessedTs.update(currentTs);
+                            out.collect(value);
+                        }
+                    }
+                });
+
+        // 输出结果
+        dedupedUser2.print("final_result->>>");
+
 
 
 
@@ -438,12 +504,5 @@ public class DbusUserInfo6BaseLabel {
         else return "射手座";
     }
 
-    private static String getmonary(Integer monary){
-        int  m = monary.intValue();
-        if (m<1000) return "低价";
-        else if (m>=1000 && m<5000) return "中价";
-        else return "高价";
-
-    }
 
 }

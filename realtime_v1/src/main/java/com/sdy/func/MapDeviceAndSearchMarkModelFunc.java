@@ -52,7 +52,8 @@ public class MapDeviceAndSearchMarkModelFunc extends RichMapFunction<JSONObject,
     }
 
 
-
+//根据操作系统类型（iOS/Android）设置不同年龄段的设备评分；通过 search_item 查找一级分类；使用一级分类匹配搜索类别；
+//根据搜索类别设置不同年龄段的搜索评分。
     @Override
     public JSONObject map(JSONObject jsonObject) throws Exception {
         String os = jsonObject.getString("os");
@@ -154,6 +155,7 @@ public class MapDeviceAndSearchMarkModelFunc extends RichMapFunction<JSONObject,
 
     }
 
+    //double 类型的数值四舍五入保留三位小数
     private static double round(double value) {
         return BigDecimal.valueOf(value)
                 .setScale(3, RoundingMode.HALF_UP)
