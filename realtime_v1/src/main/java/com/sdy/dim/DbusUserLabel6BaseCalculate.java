@@ -135,7 +135,7 @@ public class DbusUserLabel6BaseCalculate {
                 .process(new ProcessLabelFunc());
 
 
-//        userLabelProcessDs.print();
+        userLabelProcessDs.print();
 
         env.execute();
     }
