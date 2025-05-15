@@ -15,8 +15,10 @@ import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsIni
 import org.apache.flink.streaming.api.datastream.KeyedStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.co.ProcessJoinFunction;
 import org.apache.flink.streaming.api.windowing.assigners.TumblingProcessingTimeWindows;
 import org.apache.flink.streaming.api.windowing.time.Time;
+import org.apache.flink.util.Collector;
 
 import java.sql.Connection;
 import java.time.Duration;
@@ -76,7 +78,7 @@ public class DbusUserInfo6BaseLabel {
                     "on oi.id=od.order_id\n" +
                     "left join sx_004.sku_info ki\n" +
                     "on od.sku_id=ki.id\n" +
-                    "left join sx_003.hbase_kpb kpd\n" +
+                    "left join gmall_v1_danyu_shi.hbase_kpb kpd\n" +
                     "on ki.category3_id=kpd.base_category_id;";
             dim_base_categories2 = JdbcUtils.queryList2(connection, sql, DimBaseCategory2.class, false);
         } catch (Exception e) {
@@ -193,7 +195,6 @@ public class DbusUserInfo6BaseLabel {
         // 订单数据
         SingleOutputStreamOperator<JSONObject> orderInfoDs = dataConvertJsonDs
                 .filter(json -> json.getJSONObject("source").getString("table").equals("order_info"));
-//        orderInfoDs.print();
 
         SingleOutputStreamOperator<JSONObject> orderInfoUpdDs = orderInfoDs.map(new MapFunction<JSONObject, JSONObject>() {
             @Override
@@ -214,28 +215,83 @@ public class DbusUserInfo6BaseLabel {
                 return null;
             }
         });
-//        {"op":"r","uid":"384","create_time":"1745450798000","total_amount":"9549.0","order_id":"3702","ts_ms":"1747019726072"}
-//        orderInfoUpdDs.print();
 
+        SingleOutputStreamOperator<JSONObject> orderDetailDs = dataConvertJsonDs
+                .filter(json -> json.getJSONObject("source").getString("table").equals("order_detail"));
 
-        KeyedStream<JSONObject, String> orderInfoKeyByDs = orderInfoUpdDs.keyBy(json -> json.getString("order_id"));
+        SingleOutputStreamOperator<JSONObject> orderDetailUpdDs = orderDetailDs.map(new MapFunction<JSONObject, JSONObject>() {
+            @Override
+            public JSONObject map(JSONObject jsonObject) throws Exception {
+                String op = jsonObject.getString("op");
+                JSONObject json = new JSONObject();
+                if (!op.equals("d")) {
+                    JSONObject after = jsonObject.getJSONObject("after");
+                    json.put("op", op);
+                    json.put("order_id", after.getString("order_id"));
+                    json.put("ts_ms", jsonObject.getString("ts_ms"));
+                    json.put("sku_id", after.getString("sku_id"));
+                    return json;
 
-        SingleOutputStreamOperator<JSONObject> orderInfoKeyDs = orderInfoKeyByDs.keyBy(data -> data.getLong("order_id"))
+                }
+                return null;
+            }
+        });
+
+        SingleOutputStreamOperator<JSONObject> orderDetail2 = orderInfoUpdDs
+                .keyBy(o->o.getString("order_id"))
+                .intervalJoin(orderDetailUpdDs.keyBy(o->o.getString("order_id")))
+                .between(Time.days(-30), Time.days(30))
+                .process(new ProcessJoinFunction<JSONObject, JSONObject, JSONObject>() {
+                    @Override
+                    public void processElement(JSONObject jsonObject1, JSONObject jsonObject2, ProcessJoinFunction<JSONObject, JSONObject, JSONObject>.Context context, Collector<JSONObject> collector) throws Exception {
+                        jsonObject1.put("sku_id",jsonObject2.getString("sku_id"));
+
+                        collector.collect(jsonObject1);
+                    }
+                });
+
+        //通过布隆过滤器，去掉重复数据
+        SingleOutputStreamOperator<JSONObject> orderDetail1 = orderDetail2.keyBy(data -> data.getLong("order_id"))
                 .filter(new FilterBloomOrderInfolicatorFunc(1000000, 0.01));
-//        info---->> {"op":"r","uid":"1029","create_time":"1745407954000","total_amount":"5999.0","order_id":"3574","ts_ms":"1747019726044"}
-//        orderInfoKeyDs.print("info---->");
+//        orderDetail1.print();
 
-        // 1 min 分钟窗口 实现了窗口内数据的去重，只保留最新状态
-        SingleOutputStreamOperator<JSONObject> orderInfoKeyMinDs = orderInfoKeyDs.keyBy(json -> json.getString("order_id"))
-                .process(new AggregateOrderInfoFunction())
-                .keyBy(json -> json.getString("order_id"))
-                .window(TumblingProcessingTimeWindows.of(Time.minutes(1)))
-                .reduce((value1, value2) -> value2);
-        orderInfoKeyMinDs.print("key---->");
+        SingleOutputStreamOperator<JSONObject> orderInfos = orderDetail1.map(new MaoOrderInfo(dim_base_categories2, device_rate_weight_coefficient, search_rate_weight_coefficient));
+        orderInfos.print();
 
-        SingleOutputStreamOperator<JSONObject> orderInfoDS = orderInfoKeyMinDs.map(new MapInfoAndSearchMarkModelFunc(dim_base_categories2, device_rate_weight_coefficient, search_rate_weight_coefficient));
-//        orderInfoDS.print("orderInfoDS--->");
 
+//        SingleOutputStreamOperator<JSONObject> cdcOrderInfoDs = dataConvertJsonDs.filter(data -> data.getJSONObject("source").getString("table").equals("order_info"))
+//                .uid("filter kafka order info")
+//                .name("filter kafka order info");
+////        cdcOrderInfoDs.print();
+//
+//
+//        SingleOutputStreamOperator<JSONObject> cdcOrderDetailDs = dataConvertJsonDs.filter(data -> data.getJSONObject("source").getString("table").equals("order_detail"))
+//                .uid("filter kafka order detail")
+//                .name("filter kafka order detail");
+////        cdcOrderDetailDs.print();
+//
+//        SingleOutputStreamOperator<JSONObject> mapCdcOrderInfoDs = cdcOrderInfoDs.map(new MapOrderInfoDataFunc());
+//        SingleOutputStreamOperator<JSONObject> mapCdcOrderDetailDs = cdcOrderDetailDs.map(new MapOrderDetailFunc());
+//
+////        mapCdcOrderInfoDs.print();
+////        mapCdcOrderDetailDs.print();
+//
+//        SingleOutputStreamOperator<JSONObject> filterNotNullCdcOrderInfoDs = mapCdcOrderInfoDs.filter(data -> data.getString("id") != null && !data.getString("id").isEmpty());
+//        SingleOutputStreamOperator<JSONObject> filterNotNullCdcOrderDetailDs = mapCdcOrderDetailDs.filter(data -> data.getString("order_id") != null && !data.getString("order_id").isEmpty());
+////        filterNotNullCdcOrderInfoDs.print();
+////        filterNotNullCdcOrderDetailDs.print();
+//        KeyedStream<JSONObject, String> keyedStreamCdcOrderInfoDs = filterNotNullCdcOrderInfoDs.keyBy(data -> data.getString("id"));
+//        KeyedStream<JSONObject, String> keyedStreamCdcOrderDetailDs = filterNotNullCdcOrderDetailDs.keyBy(data -> data.getString("order_id"));
+////        keyedStreamCdcOrderInfoDs.print("info=--->");
+////        keyedStreamCdcOrderDetailDs.print("detail---->");
+//        SingleOutputStreamOperator<JSONObject> processIntervalJoinOrderInfoAndDetailDs = keyedStreamCdcOrderInfoDs.intervalJoin(keyedStreamCdcOrderDetailDs)
+//                .between(Time.days(-2), Time.days(2))
+//                .process(new IntervalDbOrderInfoJoinOrderDetailProcessFunc());
+////        processIntervalJoinOrderInfoAndDetailDs.print();
+////        {"payment_way":"3501","consignee":"华民","create_time":1745448003000,"sku_num":1,"split_coupon_amount":"1","order_price":"10599.0","sku_id":16,"detail_id":"5279","original_total_amount":"10599.0","uid":"390","total_amount":"10349.0","province_id":5,"trade_body":"联想（Lenovo） 拯救者Y9000P 2022 16英寸游戏笔记本电脑 i7-12700H RTX3060 冰魄白等1件商品","sku_name":"联想（Lenovo） 拯救者Y9000P 2022 16英寸游戏笔记本电脑 i7-12700H RTX3060 冰魄白","id":"3691","order_id":"3691","ts_ms":1747019726071,"split_activity_amount":250.0,"split_total_amount":10349.0}
+//        SingleOutputStreamOperator<JSONObject> Order_infoAndDetailDs = processIntervalJoinOrderInfoAndDetailDs.keyBy(data -> data.getString("detail_id"))
+//                .process(new processOrderInfoAndDetailFunc());
+//        Order_infoAndDetailDs.print();
 
         SingleOutputStreamOperator<JSONObject> userInfoDs = dataConvertJsonDs.
                 filter(data -> data.getJSONObject("source").getString("table").equals("user_info"))

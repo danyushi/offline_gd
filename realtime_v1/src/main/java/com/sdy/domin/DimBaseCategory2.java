@@ -18,12 +18,8 @@ import java.io.Serializable;
 @Data
 public class DimBaseCategory2 implements Serializable {
 
-    private String order_id;
-    private String uid;
+    private String id;
     private String bcname;
     private String btname;
-    private String price;
-    private String create_time;
-
 
 }
