@@ -269,10 +269,12 @@ public class DbusUserInfo6BaseLabel2Kafka {
                 });
 
 
+        //数据流进行过滤，保留包含非空uid字段的元素
         SingleOutputStreamOperator<JSONObject> finalUserinfoDs = mapUserInfoDs.filter(data -> data.containsKey("uid") && !data.getString("uid").isEmpty());
         SingleOutputStreamOperator<JSONObject> finalUserinfoSupDs = mapUserInfoSupDs.filter(data -> data.containsKey("uid") && !data.getString("uid").isEmpty());
-
+//将用户基本信息流按 uid 分组
         KeyedStream<JSONObject, String> keyedStreamUserInfoDs = finalUserinfoDs.keyBy(data -> data.getString("uid"));
+       //将用户补充信息流按 uid 分组
         KeyedStream<JSONObject, String> keyedStreamUserInfoSupDs = finalUserinfoSupDs.keyBy(data -> data.getString("uid"));
 //        keyedStreamUserInfoDs.print("u----->");
 //        keyedStreamUserInfoSupDs.print("sup------>");
@@ -289,7 +291,7 @@ public class DbusUserInfo6BaseLabel2Kafka {
                 .between(Time.days(-5), Time.days(5))
                 .process(new IntervalJoinUserInfoLabelProcessFunc());
 
-//        processIntervalJoinUserInfo6BaseMessageDs.print();
+        processIntervalJoinUserInfo6BaseMessageDs.print();
 
 
         // 不分层代码实现 数据量计算太大，查表数据和kafka主题太多，优化数据链路，使用kafka作为中间件进行数据处理

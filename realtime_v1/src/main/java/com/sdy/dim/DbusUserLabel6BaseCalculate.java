@@ -115,20 +115,22 @@ public class DbusUserLabel6BaseCalculate {
                 ).uid("kafka_base2_source")
                 .name("kafka_base2_source");
 
+        //Kafka消费的字符串数据转换为JSON对象
         SingleOutputStreamOperator<JSONObject> mapBase6LabelDs = kafkaBase6Source.map(JSON::parseObject);
         SingleOutputStreamOperator<JSONObject> mapBase4LabelDs = kafkaBase4Source.map(JSON::parseObject);
         SingleOutputStreamOperator<JSONObject> mapBase2LabelDs = kafkaBase2Source.map(JSON::parseObject);
 
-
+//按照用户ID uid 对两个数据流进行分组；在时间窗口内查找两个流中相关联的数据；
         SingleOutputStreamOperator<JSONObject> join2_4Ds = mapBase2LabelDs.keyBy(o -> o.getString("uid"))
                 .intervalJoin(mapBase4LabelDs.keyBy(o -> o.getString("uid")))
                 .between(Time.days(-24), Time.days(24))
                 .process(new ProcessJoinBase2And4BaseFunc());
-
+//分配时间戳和水位线
         SingleOutputStreamOperator<JSONObject> waterJoin2_4 = join2_4Ds.assignTimestampsAndWatermarks(
                 WatermarkStrategy.<JSONObject>forBoundedOutOfOrderness(Duration.ofSeconds(5))
                 .withTimestampAssigner((SerializableTimestampAssigner<JSONObject>) (jsonObject, l) -> jsonObject.getLongValue("ts_ms")));
 
+        //基于uid的两个数据流之间的时间区间关联
         SingleOutputStreamOperator<JSONObject> userLabelProcessDs = waterJoin2_4.keyBy(o -> o.getString("uid"))
                 .intervalJoin(mapBase6LabelDs.keyBy(o -> o.getString("uid")))
                 .between(Time.days(-24), Time.days(24))
@@ -136,6 +138,10 @@ public class DbusUserLabel6BaseCalculate {
 
 
         userLabelProcessDs.print();
+
+        // 输出 格式csv
+//        userLabelProcessDs.writeAsText("D:/桌面/output.csv").setParallelism(1);
+
 
         env.execute();
     }
