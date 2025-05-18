@@ -248,7 +248,7 @@ public class DbusUserInfo6BaseLabel2Kafka {
                         return result;
                     }
                 });
-//        mapUserInfoDs.print();
+        mapUserInfoDs.print();
         //数据中提取 after 字段中的用户补充信息（如身高、体重等
         SingleOutputStreamOperator<JSONObject> mapUserInfoSupDs = userInfoSupDs.map(new RichMapFunction<JSONObject, JSONObject>() {
                     @Override
@@ -310,20 +310,20 @@ public class DbusUserInfo6BaseLabel2Kafka {
 
 
 
-//        processIntervalJoinUserInfo6BaseMessageDs.map(data -> data.toJSONString())
-//                        .sinkTo(
-//                                KafkaUtils.buildKafkaSink("kafka_botstrap_servers","kafka_label_base6_topic")
-//                        );
-//
-//        mapOrderInfoAndDetailModelDs.map(data -> data.toJSONString())
-//                        .sinkTo(
-//                                KafkaUtils.buildKafkaSink("kafka_botstrap_servers","kafka_label_base4_topic")
-//                        );
-//
-//        mapDeviceAndSearchRateResultDs.map(data -> data.toJSONString())
-//                        .sinkTo(
-//                                KafkaUtils.buildKafkaSink("kafka_botstrap_servers","kafka_label_base2_topic")
-//                        );
+        processIntervalJoinUserInfo6BaseMessageDs.map(data -> data.toJSONString())
+                        .sinkTo(
+                                KafkaUtils.buildKafkaSink("kafka_botstrap_servers","kafka_label_base6_topic")
+                        );
+
+        mapOrderInfoAndDetailModelDs.map(data -> data.toJSONString())
+                        .sinkTo(
+                                KafkaUtils.buildKafkaSink("kafka_botstrap_servers","kafka_label_base4_topic")
+                        );
+
+        mapDeviceAndSearchRateResultDs.map(data -> data.toJSONString())
+                        .sinkTo(
+                                KafkaUtils.buildKafkaSink("kafka_botstrap_servers","kafka_label_base2_topic")
+                        );
 
 
 
