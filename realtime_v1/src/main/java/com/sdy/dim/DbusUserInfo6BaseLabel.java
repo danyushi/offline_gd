@@ -353,22 +353,22 @@ public class DbusUserInfo6BaseLabel {
                 }).uid("sup userinfo sup")
                 .name("sup userinfo sup");
 //        spu->>>:11> {"uid":"1045","unit_height":"cm","create_ts":1747043816000,"weight":"63","unit_weight":"kg","ts_ms":1747016080662,"height":"158"}
-//        mapUserInfoSupDs.print("spu->>>");
+        mapUserInfoSupDs.print("spu->>>");
 
 
         SingleOutputStreamOperator<JSONObject> finalUserinfoDs = mapUserInfoDs.filter(data -> data.containsKey("uid") && !data.getString("uid").isEmpty());
         SingleOutputStreamOperator<JSONObject> finalUserinfoSupDs = mapUserInfoSupDs.filter(data -> data.containsKey("uid") && !data.getString("uid").isEmpty());
 //        Userinfo--->:10> {"birthday":"1976-06-23","uid":"1045","decade":1970,"login_name":"gsxz96s63s","uname":"俞翔","gender":"M","zodiac_sign":"巨蟹座","user_level":"1","phone_num":"13532331517","email":"gsxz96s63s@msn.com","ts_ms":1747035718684,"age":48}
-//        finalUserinfoDs.print("Userinfo--->");
+        finalUserinfoDs.print("Userinfo--->");
 //        spu--->:11> {"uid":"1045","unit_height":"cm","create_ts":1747043816000,"weight":"63","unit_weight":"kg","ts_ms":1747016080662,"height":"158"}
-//        finalUserinfoSupDs.print("spu--->");
+        finalUserinfoSupDs.print("spu--->");
 
         KeyedStream<JSONObject, String> keyedStreamUserInfoDs = finalUserinfoDs.keyBy(data -> data.getString("uid"));
         KeyedStream<JSONObject, String> keyedStreamUserInfoSupDs = finalUserinfoSupDs.keyBy(data -> data.getString("uid"));
 //        kUserInfo--->:16> {"birthday":"1982-09-23","uid":"1029","decade":1980,"login_name":"h4vkj83","uname":"元伟刚","gender":"home","zodiac_sign":"天秤座","user_level":"1","phone_num":"13752945975","email":"h4vkj83@3721.net","ts_ms":1747035718684,"age":42}
-//        keyedStreamUserInfoDs.print("kUserInfo--->");
+        keyedStreamUserInfoDs.print("kUserInfo--->");
 //        kspu---->:3> {"uid":"901","unit_height":"cm","create_ts":1747043816000,"weight":"66","unit_weight":"kg","ts_ms":1747016080658,"height":"184"}
-//        keyedStreamUserInfoSupDs.print("kspu---->");
+        keyedStreamUserInfoSupDs.print("kspu---->");
 
 //年龄、性别、年代、身高、体重、星座 6 类标签
 // 17> {"birthday":"1972-01-23","decade":1970,"uname":"熊致树","gender":"home","zodiac_sign":"水瓶座","weight":"85","uid":"1028","login_name":"mnal6je","unit_height":"cm","user_level":"3","phone_num":"13515989633","unit_weight":"kg","email":"mnal6je@yahoo.com","ts_ms":1747035718684,"age":53,"height":"188"}

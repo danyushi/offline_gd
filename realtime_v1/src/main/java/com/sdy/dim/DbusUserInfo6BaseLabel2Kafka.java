@@ -191,7 +191,7 @@ public class DbusUserInfo6BaseLabel2Kafka {
         // 品类 品牌 年龄 时间 base4
         SingleOutputStreamOperator<JSONObject> mapOrderInfoAndDetailModelDs = processDuplicateOrderInfoAndDetailDs.map(new MapOrderAndDetailRateModelFunc(dim_base_categories, time_rate_weight_coefficient, amount_rate_weight_coefficient, brand_rate_weight_coefficient, category_rate_weight_coefficient));
 //        4---->> {"b1name_25-29":0.24,"sku_num":1,"pay_time_30-34":0.01,"tname_30-34":0.14,"amount_18-24":0.015,"original_total_amount":"21695.0","amount_30-34":0.045,"b1name_50":0.03,"pay_time_50":0.03,"uid":"1070","pay_time_25-29":0.01,"tname_18-24":0.18,"tname_40-49":0.14,"b1_name":"手机","pay_time_18-24":0.01,"b1name_30-34":0.18,"b1name_40-49":0.06,"tname_25-29":0.16,"sku_name":"Apple iPhone 12 (A2404) 64GB 蓝色 支持移动联通电信5G 双卡双待手机","pay_time_40-49":0.02,"id":"3708","b1name_18-24":0.27,"consignee":"周艳瑞","pay_time_35-39":0.01,"create_time":1745447489000,"c3id":"61","tname_35-39":0.14,"split_coupon_amount":"1","tname":"苹果","order_price":"8197.0","sku_id":10,"detail_id":"5305","amount_35-39":0.06,"amount_50":0.09,"tname_50":0.1,"b1name_35-39":0.12,"pay_time_slot":"早晨","amount_25-29":0.03,"total_amount":"21195.0","province_id":28,"order_id":"3708","amount_40-49":0.075,"ts_ms":1747019726073,"split_activity_amount":0.0,"split_total_amount":8197.0}
-//        mapOrderInfoAndDetailModelDs.print("4---->");
+        mapOrderInfoAndDetailModelDs.print("4---->");
 
 
 //        生日字段转换为标准日期格

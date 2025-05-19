@@ -140,7 +140,7 @@ public class DbusUserLabel6BaseCalculate {
         userLabelProcessDs.print();
 
         // 输出 格式csv
-//        userLabelProcessDs.writeAsText("D:/桌面/output.csv").setParallelism(1);
+        userLabelProcessDs.writeAsText("D:/桌面/output.csv").setParallelism(1);
 
 
         env.execute();
