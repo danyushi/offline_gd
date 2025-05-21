@@ -20,7 +20,7 @@ public class linkKafa {
 
         DataStreamSource<String> kafkauserbase2Ds = KafkaUtil.getKafkaSource(env, "realtime_v2_result_label_user_base2", "group_log");
 
-//        kafkauserbase2Ds.print();
+        kafkauserbase2Ds.print();
         DataStreamSource<String> kafkauserbase4Ds = KafkaUtil.getKafkaSource(env, "realtime_v2_result_label_user_base4", "group_log");
 
 

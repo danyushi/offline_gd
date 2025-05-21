@@ -170,18 +170,18 @@ public class DbusUserInfo6BaseLabel2Kafka {
         SingleOutputStreamOperator<JSONObject> cdcOrderDetailDs = dataConvertJsonDs.filter(data -> data.getJSONObject("source").getString("table").equals("order_detail"));
 //        cdcOrderDetailDs.print();
         SingleOutputStreamOperator<JSONObject> mapCdcOrderInfoDs = cdcOrderInfoDs.map(new MapOrderInfoDataFunc());
-//        mapCdcOrderInfoDs.print();
+        mapCdcOrderInfoDs.print();
         SingleOutputStreamOperator<JSONObject> mapCdcOrderDetailDs = cdcOrderDetailDs.map(new MapOrderDetailFunc());
-//        mapCdcOrderDetailDs.print();
+        mapCdcOrderDetailDs.print();
         SingleOutputStreamOperator<JSONObject> filterNotNullCdcOrderInfoDs = mapCdcOrderInfoDs.filter(data -> data.getString("id") != null && !data.getString("id").isEmpty());
-//        filterNotNullCdcOrderInfoDs.print();
+        filterNotNullCdcOrderInfoDs.print();
         SingleOutputStreamOperator<JSONObject> filterNotNullCdcOrderDetailDs = mapCdcOrderDetailDs.filter(data -> data.getString("order_id") != null && !data.getString("order_id").isEmpty());
-//        filterNotNullCdcOrderDetailDs.print();
+        filterNotNullCdcOrderDetailDs.print();
         KeyedStream<JSONObject, String> keyedStreamCdcOrderInfoDs = filterNotNullCdcOrderInfoDs.keyBy(data -> data.getString("id"));
-//        keyedStreamCdcOrderInfoDs.print();
+        keyedStreamCdcOrderInfoDs.print();
 
         KeyedStream<JSONObject, String> keyedStreamCdcOrderDetailDs = filterNotNullCdcOrderDetailDs.keyBy(data -> data.getString("order_id"));
-//        keyedStreamCdcOrderDetailDs.print();
+        keyedStreamCdcOrderDetailDs.print();
         SingleOutputStreamOperator<JSONObject> processIntervalJoinOrderInfoAndDetailDs = keyedStreamCdcOrderInfoDs.intervalJoin(keyedStreamCdcOrderDetailDs)
                 .between(Time.hours(-2), Time.hours(2))
                 .process(new IntervalDbOrderInfoJoinOrderDetailProcessFunc());
