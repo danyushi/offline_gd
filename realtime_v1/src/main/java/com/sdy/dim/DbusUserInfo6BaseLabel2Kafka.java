@@ -276,8 +276,8 @@ public class DbusUserInfo6BaseLabel2Kafka {
         KeyedStream<JSONObject, String> keyedStreamUserInfoDs = finalUserinfoDs.keyBy(data -> data.getString("uid"));
        //将用户补充信息流按 uid 分组
         KeyedStream<JSONObject, String> keyedStreamUserInfoSupDs = finalUserinfoSupDs.keyBy(data -> data.getString("uid"));
-//        keyedStreamUserInfoDs.print("u----->");
-//        keyedStreamUserInfoSupDs.print("sup------>");
+        keyedStreamUserInfoDs.print("u----->");
+        keyedStreamUserInfoSupDs.print("sup------>");
         // base6Line
 
         /*
